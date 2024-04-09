@@ -12,26 +12,26 @@ def sch():
     lecture_groups = 5
     subjectGroup = [[0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0],
                     [0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 0, 0],
-                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0],
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 0, 0],
                     [2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0],
                     [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0],
-                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 0, 0],
                     [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0],
                     [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0],
                     [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0],
                     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
-                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
-                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0],
+                    [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0],
+                    [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0],
                     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0]
                     ]
     subGroup = {9: [0, 1, 2], 10: [3, 4, 5], 11: [6, 7, 8], 12: [0, 1, 2, 3], 13: [4, 5, 6, 7, 8]}  # sub
-    Unity = {}
+    unity = {}
     for g in range(casual_groups + lecture_groups):
-        Unity[g] = [g]
+        unity[g] = [g]
         for lg, v in subGroup.items():
             if g in v:
-                Unity[g].append(lg)
-    print(Unity)
+                unity[g].append(lg)
+    print(unity)
     lecture_rooms_range = range(casual_rooms, lecture_rooms + casual_rooms)
     casual_rooms_range = range(casual_rooms)
     all_subjects = range(subjects)
@@ -97,7 +97,7 @@ def sch():
     #                             (casual_rooms_range if g in casual_groups_range else lecture_rooms_range)))
     for g in all_groups:
         for l in all_lessons:
-            model.AddAtMostOne((schedule[(r, s, l, ug)] for ug in Unity[g]
+            model.AddAtMostOne((schedule[(r, s, l, ug)] for ug in unity[g]
                                 for s in all_subjects
                                 for r in
                                 (casual_rooms_range if ug in casual_groups_range else lecture_rooms_range)))
@@ -120,37 +120,41 @@ def sch():
             lessonToOptimize.append(l)
     indix = {}
     for l in all_lessons:
-        for g in all_groups:
-            if (l % 5 <= 1):
+        for g in casual_groups_range:
+            if l % 5 <= 1:
                 continue
+            d = l // 5
             indix[(l, g)] = model.NewBoolVar(f"ind_{[l]}_{groupsNames[g]}")
-            model.Add(2 == sum(schedule[(r, s, ll, g)]
-                               for r in
-                               (casual_rooms_range if g in casual_groups_range else lecture_rooms_range)
-                               for s in all_subjects
-                               for ll in [l - 1, l]
-                               )
-                      ).OnlyEnforceIf(indix[(l, g)])
-            model.Add(0 == sum(schedule[(r, s, ll, g)]
-                               for r in
-                               (casual_rooms_range if g in casual_groups_range else lecture_rooms_range)
-                               for s in all_subjects
-                               for ll in [l - 1, l]
-                               )
-                      ).OnlyEnforceIf(indix[(l, g)].Not())
-    # z = sum((indix[(l, g)]) * (l % 5)
+            model.AddMaxEquality(indix[(l, g)], [schedule[(r, s, ll, ug)]
+                                                 for ll in range(d * 5, l - 1)
+                                                 for ug in unity[g]
+                                                 for r in (
+                                                     casual_rooms_range if ug in casual_groups_range else lecture_rooms_range)
+                                                 for s in all_subjects])
+            model.Add(indix[(l, g)] - sum(schedule[(r, s, l - 1, ug)]
+                                          for ug in unity[g]
+                                          for r in (
+                                              casual_rooms_range if ug in casual_groups_range else lecture_rooms_range)
+                                          for s in all_subjects)
+                      + sum(schedule[(r, s, l, ug)]
+                            for ug in unity[g]
+                            for r in (casual_rooms_range if ug in casual_groups_range else lecture_rooms_range)
+                            for s in all_subjects) <= 1)
+    # z = sum(sum(schedule[(r, s, l, g)]
+    #             for r in (casual_rooms_range if g in casual_groups_range else lecture_rooms_range)
+    #             for s in all_subjects) * ((l + 0) % 5)
     #         for g in all_groups
     #         for l in lessonToOptimize)
     # model.Minimize(z)
-    # model.Add(z <= 150)
+    # model.Add(z <= 10)
 
     solver = cp_model.CpSolver()
 
     solver.parameters.enumerate_all_solutions = False
     status = solver.Solve(model)
 
-    print(solver.SolutionInfo())
-    print(solver.ResponseStats())
+    # print(solver.SolutionInfo())
+    # print(solver.ResponseStats())
 
     if status == cp_model.FEASIBLE:
         print("ok")
@@ -159,14 +163,17 @@ def sch():
 
     print(status)
     result = {}
-
+    sss = 0
     for k, v in schedule.items():
         r, s, l, g = k
 
         if solver.Value(v) and (s, g) in subjectGroupMap:
             result[k] = 1
+            sss += 1
+
     ans = {}
 
+    print(sss)
     # fix!
     def errors(schedule_inst):
         e = 0
@@ -204,17 +211,6 @@ def sch():
     for l in all_lessons:
         print(ans[l])
     errors(result)
-    for k, v in indix.items():
-        print(v, solver.Value(v))
-    s = [(schedule[(r, s, ll, 5)], solver.Value(schedule[(r, s, ll, 5)]))
-         for r in
-         (casual_rooms_range if 5 in casual_groups_range else lecture_rooms_range)
-         for s in all_subjects
-         for ll in [4 - 1, 4]
-         ]
-    for ss in s:
-        if ss[1] == 1:
-            print(ss)
 
 
 if __name__ == "__main__":
